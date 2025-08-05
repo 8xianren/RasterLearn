@@ -28,7 +28,7 @@ public class SoftRasterWireframe : MonoBehaviour
     private Texture2D shadowTextureDirectLight;
 
     public int shadowMapResolution = 512;
-    public Light directionalLight0;
+    
 
     private float[] depthBufferShadow;
 
@@ -60,6 +60,10 @@ public class SoftRasterWireframe : MonoBehaviour
     private int textureHeight = 1080;
     private Matrix4x4 viewMatrix;
     private Matrix4x4 projectionMatrix;
+
+    private Matrix4x4 lightViewMatrix;
+
+    private Matrix4x4 lgithProjMatrix;
     Matrix4x4 normView3DScreen = Matrix4x4.identity;
 
     public bool isWireframe = true;
@@ -84,7 +88,7 @@ public class SoftRasterWireframe : MonoBehaviour
         cubeNoramlTexture2D = noramlTexture as Texture2D;
 
         
-        directionalLight0 = directLight.GetComponent<Light>();
+        
         
 
         depthBuffer = new float[textureWidth * textureHeight];
@@ -221,14 +225,48 @@ public class SoftRasterWireframe : MonoBehaviour
         }
         else 
         {
-            
-            
+
+            CreateShadow();
             CreateSimpleFillColor();
             
             
         }
 
         
+    }
+
+
+    void CreateShadow()
+    {
+        CalLightViewMatrix(directLight);
+        CalCameraBounds(sceneCamera);
+
+    }
+
+
+    private void CalLightViewMatrix(GameObject direLight )
+    {
+        //
+        Vector3 lightForward = direLight.transform.forward;
+        Vector3 lightUp = direLight.transform.up;
+        Vector3 lightPos = direLight.transform.position;
+
+        Vector3 u = Vector3.Cross(lightUp, lightForward).normalized;
+        Vector3 v = Vector3.Cross( lightForward, u).normalized;
+
+        
+        lightViewMatrix.SetRow(0, new Vector4(u.x, u.y, u.z, -Vector3.Dot(u, lightPos)));
+        lightViewMatrix.SetRow(1, new Vector4(v.x, v.y, v.z, -Vector3.Dot(v, lightPos)));
+        lightViewMatrix.SetRow(2, new Vector4(lightForward.x, lightForward.y, lightForward.z, -Vector3.Dot(lightForward, lightPos)));
+        lightViewMatrix.SetRow(3, new Vector4(0, 0, 0, 1));
+
+        
+
+    }
+
+    private MyBounds CalCameraBounds(Camera sceneCamera)
+    {
+        return new MyBounds();
     }
 
 
@@ -441,67 +479,67 @@ public class SoftRasterWireframe : MonoBehaviour
         return (P.x - A.x) * (B.y - A.y) - (P.y - A.y) * (B.x - A.x);
     }
     
-    private Matrix4x4 CalculateLightVP(Camera mainCamera, Light directionalLight, out Bounds lightBounds)
-    {
-        Vector3 lightDir = directionalLight.transform.forward;
+    // private Matrix4x4 CalculateLightVP(Camera mainCamera, Light directionalLight, out Bounds lightBounds)
+    // {
+    //     Vector3 lightDir = directionalLight.transform.forward;
 
         
 
-        // 对于远平面，我们需要从摄像机设置获取
-        float shadowFarDistance = QualitySettings.shadowDistance;
+    //     // 对于远平面，我们需要从摄像机设置获取
+    //     float shadowFarDistance = QualitySettings.shadowDistance;
     
-        // 使用摄像机位置作为基础计算光源位置
-        Vector3 lightPosition = mainCamera.transform.position - lightDir * shadowFarDistance;
+    //     // 使用摄像机位置作为基础计算光源位置
+    //     Vector3 lightPosition = mainCamera.transform.position - lightDir * shadowFarDistance;
         
-        // 创建光源视图矩阵
-        Matrix4x4 lightView = Matrix4x4.LookAt(
-            lightPosition,
-            lightPosition + lightDir,
-            Vector3.up
-        );
+    //     // 创建光源视图矩阵
+    //     Matrix4x4 lightView = Matrix4x4.LookAt(
+    //         lightPosition,
+    //         lightPosition + lightDir,
+    //         Vector3.up
+    //     );
     
-        // 获取摄像机视锥体角点
-        Vector3[] frustumCorners = new Vector3[8];
-        mainCamera.CalculateFrustumCorners(
-            new Rect(0, 0, 1, 1),
-            shadowFarDistance,
-            Camera.MonoOrStereoscopicEye.Mono,
-            frustumCorners
-        );
+    //     // 获取摄像机视锥体角点
+    //     Vector3[] frustumCorners = new Vector3[8];
+    //     mainCamera.CalculateFrustumCorners(
+    //         new Rect(0, 0, 1, 1),
+    //         shadowFarDistance,
+    //         Camera.MonoOrStereoscopicEye.Mono,
+    //         frustumCorners
+    //     );
 
-        // 计算光源空间包围盒
-        Vector3 min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
-        Vector3 max = new Vector3(float.MinValue, float.MinValue, float.MinValue);
+    //     // 计算光源空间包围盒
+    //     Vector3 min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+    //     Vector3 max = new Vector3(float.MinValue, float.MinValue, float.MinValue);
         
-        for (int i = 0; i < frustumCorners.Length; i++)
-        {
-            Vector3 worldCorner = mainCamera.transform.TransformPoint(frustumCorners[i]);
-            Vector3 lightSpaceCorner = lightView.MultiplyPoint(worldCorner);
+    //     for (int i = 0; i < frustumCorners.Length; i++)
+    //     {
+    //         Vector3 worldCorner = mainCamera.transform.TransformPoint(frustumCorners[i]);
+    //         Vector3 lightSpaceCorner = lightView.MultiplyPoint(worldCorner);
             
-            min = Vector3.Min(min, lightSpaceCorner);
-            max = Vector3.Max(max, lightSpaceCorner);
-        }
+    //         min = Vector3.Min(min, lightSpaceCorner);
+    //         max = Vector3.Max(max, lightSpaceCorner);
+    //     }
         
-        // 设置包围盒
-        lightBounds = new Bounds();
-        lightBounds.SetMinMax(min, max);
+    //     // 设置包围盒
+    //     lightBounds = new Bounds();
+    //     lightBounds.SetMinMax(min, max);
         
-        // 扩展10%避免裁剪问题
-        lightBounds.Expand(lightBounds.size * 0.1f);
+    //     // 扩展10%避免裁剪问题
+    //     lightBounds.Expand(lightBounds.size * 0.1f);
         
-        // 创建正交投影矩阵
-        float left = lightBounds.min.x;
-        float right = lightBounds.max.x;
-        float bottom = lightBounds.min.y;
-        float top = lightBounds.max.y;
-        float near = Mathf.Max(directionalLight.shadowNearPlane, 0.01f); // 确保不为零
-        float far = lightBounds.max.z - lightBounds.min.z + near;
+    //     // 创建正交投影矩阵
+    //     float left = lightBounds.min.x;
+    //     float right = lightBounds.max.x;
+    //     float bottom = lightBounds.min.y;
+    //     float top = lightBounds.max.y;
+    //     float near = Mathf.Max(directionalLight.shadowNearPlane, 0.01f); // 确保不为零
+    //     float far = lightBounds.max.z - lightBounds.min.z + near;
         
-        Matrix4x4 lightProjection = Matrix4x4.Ortho(left, right, bottom, top, near, far);
+    //     Matrix4x4 lightProjection = Matrix4x4.Ortho(left, right, bottom, top, near, far);
         
-        // 返回视图投影矩阵 (Projection * View)
-        return lightProjection * lightView;
-    }
+    //     // 返回视图投影矩阵 (Projection * View)
+    //     return lightProjection * lightView;
+    // }
 
     private void CreateWireFrame()
     {
@@ -672,7 +710,14 @@ public class Triangle
         v0 = _v0;
         v1 = _v1;
         v2 = _v2;
-        
-        
+
+
     }
+}
+
+public class MyBounds
+{
+    Vector3 lbMin;
+
+    Vector3 rtMax;
 }
