@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Linq;
@@ -118,7 +119,7 @@ public class SoftRasterWireframe : MonoBehaviour
         {
             Vector3 pos = mesh.vertices[i];
             Vector3 normal = mesh.normals[i];
-            Color color = new Color(Random.value, Random.value, Random.value, 1.0f); // 随机颜色
+            Color color = new Color(UnityEngine.Random.value, UnityEngine.Random.value, UnityEngine.Random.value, 1.0f); // 随机颜色
             myOriginalVertices[i] = new OriginalVertex(pos, normal, color);
 
             uvCoords[i] = mesh.uv[i];
@@ -239,7 +240,24 @@ public class SoftRasterWireframe : MonoBehaviour
     void CreateShadow()
     {
         CalLightViewMatrix(directLight);
-        CalCameraBounds(sceneCamera);
+        //List<Vector3> corners = new List<Vector3>();
+        List<Vector3> corners = CalCameraBounds();
+        List<Vector3> cornersInLightView = new List<Vector3>();
+        cornersInLightView.Capacity = corners.Count;
+
+        Vector3 minXYZ = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+        Vector3 maxXYZ = new Vector3(float.MinValue, float.MinValue, float.MinValue);
+        for (int i = 0; i < corners.Count; ++i)
+        {
+            cornersInLightView.Add( lightViewMatrix.MultiplyPoint(corners[i]) ); 
+            //Debug.Log(cornersInLightView[i]);
+            minXYZ = Vector3.Min(cornersInLightView[i], minXYZ);
+            maxXYZ = Vector3.Max(cornersInLightView[i], maxXYZ);
+
+        }
+
+
+
 
     }
 
@@ -264,9 +282,29 @@ public class SoftRasterWireframe : MonoBehaviour
 
     }
 
-    private MyBounds CalCameraBounds(Camera sceneCamera)
+    private List<Vector3> CalCameraBounds()
     {
-        return new MyBounds();
+        float near = sceneCamera.nearClipPlane;
+        float far = sceneCamera.farClipPlane;
+        float fov = sceneCamera.fieldOfView;
+        float aspect = sceneCamera.aspect;
+
+        int[] dx = { 1, -1 , -1 , 1};
+        int[] dy = { 1, 1, -1, -1};
+
+        float halfHeightNear = near * Mathf.Tan(fov/2 * Mathf.Deg2Rad);
+        float halfWidthNear = halfHeightNear * aspect;
+        float halfHeightFar = far * Mathf.Tan(fov/2 * Mathf.Deg2Rad);
+        float halfWidthFar = halfHeightFar * aspect;
+
+        List<Vector3> resCorners = new List<Vector3>();
+        for (int i = 0; i < 4; ++i)
+        {
+            
+            resCorners.Add(new Vector3(halfWidthNear * dx[i], halfHeightNear * dy[i], near));
+            resCorners.Add(new Vector3( halfWidthFar*dx[i], halfHeightFar*dy[i] , far) );
+        }
+        return resCorners;
     }
 
 
@@ -715,9 +753,4 @@ public class Triangle
     }
 }
 
-public class MyBounds
-{
-    Vector3 lbMin;
 
-    Vector3 rtMax;
-}
