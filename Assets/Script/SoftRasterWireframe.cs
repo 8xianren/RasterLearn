@@ -28,7 +28,7 @@ public class SoftRasterWireframe : MonoBehaviour
 
     private Texture2D shadowTextureDirectLight;
 
-    public int shadowMapResolution = 512;
+    public Vector3Int shadowMapResolution = new Vector3Int(512, 512, 512);
     
 
     private float[] depthBufferShadow;
@@ -64,7 +64,7 @@ public class SoftRasterWireframe : MonoBehaviour
 
     private Matrix4x4 lightViewMatrix;
 
-    private Matrix4x4 lgithProjMatrix;
+    private Matrix4x4 lightProjMatrix;
     Matrix4x4 normView3DScreen = Matrix4x4.identity;
 
     public bool isWireframe = true;
@@ -73,9 +73,13 @@ public class SoftRasterWireframe : MonoBehaviour
     
     public bool textureOn = false;
 
+    private Mesh mesh;
+
+    private Vector3[] verticesInLight;
+
     private void Start()
     {
-
+        
         rasterTexture = new Texture2D(textureWidth, textureHeight);
         rasterTexture.wrapMode = TextureWrapMode.Clamp;
         rawImage.texture = rasterTexture;
@@ -88,9 +92,9 @@ public class SoftRasterWireframe : MonoBehaviour
 
         cubeNoramlTexture2D = noramlTexture as Texture2D;
 
-        
-        
-        
+
+
+
 
         depthBuffer = new float[textureWidth * textureHeight];
         for (int i = 0; i < depthBuffer.Length; i++)
@@ -100,7 +104,7 @@ public class SoftRasterWireframe : MonoBehaviour
 
         InitializeCube();
 
-        
+
         UpdateCameraMatrices();
     }
 
@@ -109,7 +113,7 @@ public class SoftRasterWireframe : MonoBehaviour
         MeshFilter meshFilter = cube.GetComponent<MeshFilter>();
 
 
-        Mesh mesh = meshFilter.mesh;
+        mesh = meshFilter.mesh;
         
         uvCoords = new Vector2[mesh.vertexCount];
 
@@ -139,7 +143,7 @@ public class SoftRasterWireframe : MonoBehaviour
             Debug.Log("Triangle " + i + ": " + myTriangles[i]);
         }
         
-        
+        verticesInLight = new Vector3[mesh.vertexCount];
     }
 
     private void CalculateViewCoordinates()
@@ -249,20 +253,48 @@ public class SoftRasterWireframe : MonoBehaviour
         Vector3 maxXYZ = new Vector3(float.MinValue, float.MinValue, float.MinValue);
         for (int i = 0; i < corners.Count; ++i)
         {
-            cornersInLightView.Add( lightViewMatrix.MultiplyPoint(corners[i]) ); 
+            Vector3 temp = lightViewMatrix * viewMatrix.inverse.MultiplyPoint(corners[i]);
+            //temp.z = -temp.z; 
+            cornersInLightView.Add(temp);
+
             //Debug.Log(cornersInLightView[i]);
             minXYZ = Vector3.Min(cornersInLightView[i], minXYZ);
             maxXYZ = Vector3.Max(cornersInLightView[i], maxXYZ);
 
         }
 
+        directOrtho(minXYZ, maxXYZ);
 
+        Matrix4x4 lightMVP = lightProjMatrix * lightViewMatrix * cube.transform.localToWorldMatrix;
+        for (int i = 0; i < mesh.vertexCount; ++i)
+        {
+            verticesInLight[i] = lightMVP.MultiplyPoint(mesh.vertices[i]);
+        }
+
+        for (int i = 0; i < myTriangles.Length; i += 3)
+        {
+            RasterShadow(i, ref verticesInLight);
+        }
 
 
     }
 
+    private void directOrtho(Vector3 min, Vector3 max)
+    {
+        float left = min.x;
+        float right = max.x;
+        float bottom = min.y;
+        float top = max.y;
+        float zNear = min.z;
+        float zFar = max.z;
 
-    private void CalLightViewMatrix(GameObject direLight )
+        lightViewMatrix.SetRow(0, new Vector4(2 / (right - left), 0, 0, -(right + left) / (right - left)));
+        lightViewMatrix.SetRow(1, new Vector4(0, 2 / (top - bottom), 0, -(top + bottom) / (top - bottom)));
+        lightViewMatrix.SetRow(2, new Vector4(0, 0, 2 / (zFar - zNear), -(zFar + zNear) / (zFar - zNear)));
+        lightViewMatrix.SetRow(3, new Vector4(0 , 0 , 0 , 1));
+    }
+
+    private void CalLightViewMatrix(GameObject direLight)
     {
         //
         Vector3 lightForward = direLight.transform.forward;
@@ -270,15 +302,15 @@ public class SoftRasterWireframe : MonoBehaviour
         Vector3 lightPos = direLight.transform.position;
 
         Vector3 u = Vector3.Cross(lightUp, lightForward).normalized;
-        Vector3 v = Vector3.Cross( lightForward, u).normalized;
+        Vector3 v = Vector3.Cross(lightForward, u).normalized;
 
-        
+
         lightViewMatrix.SetRow(0, new Vector4(u.x, u.y, u.z, -Vector3.Dot(u, lightPos)));
         lightViewMatrix.SetRow(1, new Vector4(v.x, v.y, v.z, -Vector3.Dot(v, lightPos)));
         lightViewMatrix.SetRow(2, new Vector4(lightForward.x, lightForward.y, lightForward.z, -Vector3.Dot(lightForward, lightPos)));
         lightViewMatrix.SetRow(3, new Vector4(0, 0, 0, 1));
 
-        
+
 
     }
 
@@ -305,6 +337,42 @@ public class SoftRasterWireframe : MonoBehaviour
             resCorners.Add(new Vector3( halfWidthFar*dx[i], halfHeightFar*dy[i] , far) );
         }
         return resCorners;
+    }
+
+    private void RasterShadow(int index, ref Vector3[] vert)
+    {
+        int v0 = myTriangles[index];
+        int v1 = myTriangles[index + 1];
+        int v2 = myTriangles[index + 2];
+
+        Vector3 p0 = vert[v0];
+        Vector3 p1 = vert[v1];
+        Vector3 p2 = vert[v2];
+
+        float minX = Mathf.Min(p0.x, Mathf.Min(p1.x, p2.x));
+        float maxX = Mathf.Max(p0.x, Mathf.Max(p1.x, p2.x));
+        float minY = Mathf.Min(p0.y, Mathf.Min(p1.y, p2.y));
+        float maxY = Mathf.Max(p0.y, Mathf.Max(p1.y, p2.y));
+
+        int startX = Mathf.Max(0, Mathf.FloorToInt(minX));
+        int endX = Mathf.Min(shadowMapResolution.x - 1, Mathf.CeilToInt(maxX));
+        int startY = Mathf.Max(0, Mathf.FloorToInt(minY));
+        int endY = Mathf.Min(shadowMapResolution.y - 1, Mathf.CeilToInt(maxY));
+
+
+        for (int i = startX; i <= endX; ++i)
+        {
+            for (int j = startY; j <= endY; ++j)
+            {
+                Vector3 currentPixel = new Vector3(i + 0.5f, j + 0.5f, 0.0f);
+
+                
+
+                    
+                
+            }
+        }
+    
     }
 
 
